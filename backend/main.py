@@ -59,6 +59,7 @@ def process_query(request: QueryRequest):
     if plan["intent"] == "job_search":
         results = collect_jobs(
             keywords=plan["keywords"],
+            role=plan["role"],
             days=plan["days"],
             limit=20
         )
