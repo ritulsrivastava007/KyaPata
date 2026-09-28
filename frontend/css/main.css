@@ -435,7 +435,7 @@ footer span:first-child {
 }
 
 
-@media (max-width: 800px) {
+@media (max-width: 600px) {
 
     .navbar {
         padding: 0 20px;
@@ -780,4 +780,103 @@ footer span:first-child {
 .match-check {
     color: #525252;
     font-weight: 700;
+}
+
+/* ================================
+   SEARCH HISTORY
+================================ */
+
+.history-list {
+    display: grid;
+    gap: 10px;
+}
+
+.history-item {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    padding: 18px 20px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: white;
+    color: var(--text);
+    text-align: left;
+    cursor: pointer;
+    font-family: inherit;
+    transition:
+        border-color 0.2s ease,
+        transform 0.2s ease,
+        box-shadow 0.2s ease;
+}
+
+.history-item:hover {
+    border-color: var(--border-dark);
+    transform: translateY(-1px);
+    box-shadow: 0 5px 18px rgba(0, 0, 0, 0.04);
+}
+
+.history-query {
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.history-meta {
+    margin-top: 6px;
+    color: var(--muted);
+    font-size: 12px;
+}
+
+.history-arrow {
+    color: var(--muted);
+    font-size: 18px;
+}
+
+@media (max-width: 600px) {
+    .history-item {
+        padding: 16px;
+    }
+}
+
+/* ================================
+   SOURCE SUMMARY
+================================ */
+
+.results-live-info {
+    display: flex;
+    align-items: flex-end;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.source-summary {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px;
+}
+
+.source-summary-item {
+    padding: 5px 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: white;
+    color: var(--muted);
+    font-size: 11px;
+}
+
+.source-summary-item strong {
+    color: var(--text);
+    margin-right: 3px;
+}
+
+@media (max-width: 600px) {
+    .results-live-info {
+        align-items: flex-start;
+    }
+
+    .source-summary {
+        justify-content: flex-start;
+    }
 }

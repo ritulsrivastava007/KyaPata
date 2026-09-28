@@ -1,5 +1,9 @@
+import re
+import html
 import requests
+
 from datetime import datetime, timedelta, timezone
+from html.parser import HTMLParser
 
 
 JOBICY_API = "https://jobicy.com/api/v2/remote-jobs"
@@ -45,96 +49,259 @@ ROLE_SYNONYMS = {
     "intern": {
         "intern",
         "internship",
+        "internships",
         "trainee"
     }
 }
 
 
+SOURCE_SEARCH_TERMS = {
+    "devops": [
+        "devops",
+        "devops engineer",
+        "cloud engineer"
+    ],
+    "developer": [
+        "developer",
+        "software developer",
+        "software engineer"
+    ],
+    "engineer": [
+        "engineer",
+        "software engineer",
+        "developer"
+    ],
+    "designer": [
+        "designer",
+        "ux designer",
+        "ui designer"
+    ],
+    "analyst": [
+        "analyst",
+        "data analyst"
+    ],
+    "tester": [
+        "tester",
+        "qa",
+        "quality assurance"
+    ],
+    "intern": [
+        "intern",
+        "internship"
+    ]
+}
+
+
+class HTMLTextParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.parts = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag in {"p", "div", "br", "li", "h1", "h2", "h3", "h4"}:
+            self.parts.append(" ")
+
+    def handle_endtag(self, tag):
+        if tag in {"p", "div", "li", "h1", "h2", "h3", "h4"}:
+            self.parts.append(" ")
+
+    def handle_data(self, data):
+        self.parts.append(data)
+
+
+def clean_html(text):
+    if not text:
+        return ""
+
+    text = str(text)
+
+    parser = HTMLTextParser()
+
+    try:
+        parser.feed(text)
+        parser.close()
+        text = "".join(parser.parts)
+    except Exception:
+        text = re.sub(r"<[^>]+>", " ", text)
+
+    text = html.unescape(text)
+    text = re.sub(r"\s+", " ", text)
+
+    return text.strip()
+
+
 def fetch_jobicy(params):
-    response = requests.get(
-        JOBICY_API,
-        params=params,
-        timeout=15
-    )
+    try:
+        response = requests.get(
+            JOBICY_API,
+            params=params,
+            timeout=15
+        )
 
-    response.raise_for_status()
+        response.raise_for_status()
 
-    return response.json().get("jobs", [])
+        data = response.json()
+
+        if isinstance(data, dict):
+            jobs = data.get("jobs", [])
+
+            if isinstance(jobs, list):
+                return jobs
+
+        return []
+
+    except (requests.RequestException, ValueError):
+        return []
 
 
 def fetch_himalayas(query, limit=20):
-    response = requests.get(
-        HIMALAYAS_API,
-        params={
-            "q": query,
-            "sort": "recent",
-            "page": 1
-        },
-        timeout=15
-    )
+    try:
+        response = requests.get(
+            HIMALAYAS_API,
+            params={
+                "q": query,
+                "sort": "recent",
+                "page": 1
+            },
+            timeout=15
+        )
 
-    response.raise_for_status()
+        response.raise_for_status()
 
-    data = response.json()
+        data = response.json()
 
-    if isinstance(data, dict):
-        return data.get("jobs", [])
+        if isinstance(data, dict):
+            jobs = data.get("jobs", [])
 
-    return []
+            if isinstance(jobs, list):
+                return jobs[:limit]
+
+        return []
+
+    except (requests.RequestException, ValueError):
+        return []
 
 
 def parse_date(value):
-
-    if not value:
+    if value is None or value == "":
         return None
 
-    if isinstance(value, (int, float)):
+    try:
+        if isinstance(value, (int, float)):
+            timestamp = float(value)
 
-        try:
-            return datetime.fromtimestamp(
-                value / 1000,
-                tz=timezone.utc
-            )
-        except (ValueError, OSError, OverflowError):
-            return None
-
-    if isinstance(value, str):
-
-        value = value.strip()
-
-        if value.isdigit():
-
-            try:
+            if timestamp < 10_000_000_000:
                 return datetime.fromtimestamp(
-                    int(value) / 1000,
+                    timestamp,
                     tz=timezone.utc
                 )
-            except (ValueError, OSError, OverflowError):
+
+            if timestamp < 10_000_000_000_000:
+                timestamp /= 1000
+
+                return datetime.fromtimestamp(
+                    timestamp,
+                    tz=timezone.utc
+                )
+
+            timestamp /= 1_000_000
+
+            return datetime.fromtimestamp(
+                timestamp,
+                tz=timezone.utc
+            )
+
+        if isinstance(value, str):
+            value = value.strip()
+
+            if not value:
                 return None
 
-        try:
-            return datetime.fromisoformat(
-                value.replace("Z", "+00:00")
-            )
-        except ValueError:
-            pass
+            if re.fullmatch(r"\d+(?:\.\d+)?", value):
+                timestamp = float(value)
 
-        for fmt in [
-            "%Y-%m-%d",
-            "%Y-%m-%d %H:%M:%S",
-            "%Y-%m-%dT%H:%M:%S"
-        ]:
+                if timestamp < 10_000_000_000:
+                    return datetime.fromtimestamp(
+                        timestamp,
+                        tz=timezone.utc
+                    )
+
+                if timestamp < 10_000_000_000_000:
+                    timestamp /= 1000
+
+                    return datetime.fromtimestamp(
+                        timestamp,
+                        tz=timezone.utc
+                    )
+
+                timestamp /= 1_000_000
+
+                return datetime.fromtimestamp(
+                    timestamp,
+                    tz=timezone.utc
+                )
 
             try:
-                return datetime.strptime(
-                    value,
-                    fmt
-                ).replace(tzinfo=timezone.utc)
+                parsed = datetime.fromisoformat(
+                    value.replace("Z", "+00:00")
+                )
+
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(
+                        tzinfo=timezone.utc
+                    )
+
+                return parsed.astimezone(timezone.utc)
 
             except ValueError:
-                continue
+                pass
+
+            for fmt in [
+                "%Y-%m-%d",
+                "%Y-%m-%d %H:%M:%S",
+                "%Y-%m-%dT%H:%M:%S",
+                "%Y-%m-%dT%H:%M:%S.%f"
+            ]:
+                try:
+                    return datetime.strptime(
+                        value,
+                        fmt
+                    ).replace(tzinfo=timezone.utc)
+
+                except ValueError:
+                    continue
+
+    except (
+        ValueError,
+        OSError,
+        OverflowError,
+        TypeError
+    ):
+        return None
 
     return None
+
+
+def get_source_queries(search_terms, role_terms):
+    queries = []
+
+    for term in role_terms:
+        queries.extend(
+            SOURCE_SEARCH_TERMS.get(
+                term,
+                [term]
+            )
+        )
+
+    queries.extend(search_terms)
+
+    return list(
+        dict.fromkeys(
+            query.strip().lower()
+            for query in queries
+            if query.strip()
+        )
+    )
 
 
 def collect_jobs(
@@ -143,7 +310,6 @@ def collect_jobs(
     days=None,
     limit=20
 ):
-
     keywords = keywords or []
     role = role or []
 
@@ -164,7 +330,6 @@ def collect_jobs(
     expanded_roles = set()
 
     for item in role_terms:
-
         if item in ROLE_SYNONYMS:
             expanded_roles.update(
                 ROLE_SYNONYMS[item]
@@ -172,186 +337,177 @@ def collect_jobs(
         else:
             expanded_roles.add(item)
 
+    source_queries = get_source_queries(
+        search_terms,
+        role_terms
+    )
+
     all_jobs = []
 
     # --------------------------------------------------
     # SOURCE 1: JOBICY
     # --------------------------------------------------
 
-    try:
+    jobicy_queries = source_queries or ["remote"]
 
-        params = {
-            "count": 200
-        }
-
-        if search_terms:
-            params["tag"] = search_terms[0]
-
-        jobicy_jobs = fetch_jobicy(params)
-
-        for job in jobicy_jobs:
-
-            title = job.get(
-                "jobTitle",
-                ""
-            ).strip()
-
-            company = job.get(
-                "companyName",
-                ""
-            ).strip()
-
-            description = job.get(
-                "jobDescription",
-                ""
-            ).strip()
-
-            excerpt = job.get(
-                "jobExcerpt",
-                ""
-            ).strip()
-
-            searchable = " ".join([
-                title,
-                company,
-                description,
-                excerpt
-            ]).lower()
-
-            all_jobs.append({
-                "title": title,
-                "company": company,
-                "location": job.get(
-                    "jobGeo",
-                    ""
-                ),
-                "job_type": job.get(
-                    "jobType",
-                    []
-                ),
-                "level": job.get(
-                    "jobLevel",
-                    ""
-                ),
-                "description": excerpt or description,
-                "url": job.get(
-                    "url",
-                    ""
-                ).strip(),
-                "published": job.get(
-                    "pubDate"
-                ),
-                "source": "Jobicy",
-                "_searchable": searchable
+    for source_query in jobicy_queries:
+        try:
+            jobicy_jobs = fetch_jobicy({
+                "count": 200,
+                "tag": source_query
             })
 
-    except requests.RequestException:
-        pass
+            for job in jobicy_jobs:
+                title = str(
+                    job.get("jobTitle", "") or ""
+                ).strip()
+
+                company = str(
+                    job.get("companyName", "") or ""
+                ).strip()
+
+                description = str(
+                    job.get("jobDescription", "") or ""
+                ).strip()
+
+                excerpt = str(
+                    job.get("jobExcerpt", "") or ""
+                ).strip()
+
+                searchable = " ".join([
+                    title,
+                    company,
+                    description,
+                    excerpt
+                ]).lower()
+
+                all_jobs.append({
+                    "title": title,
+                    "company": company,
+                    "location": job.get(
+                        "jobGeo",
+                        ""
+                    ),
+                    "job_type": job.get(
+                        "jobType",
+                        []
+                    ),
+                    "level": job.get(
+                        "jobLevel",
+                        ""
+                    ),
+                    "description": clean_html(
+                        excerpt or description
+                    ),
+                    "url": str(
+                        job.get("url", "") or ""
+                    ).strip(),
+                    "published": job.get(
+                        "pubDate"
+                    ),
+                    "source": "Jobicy",
+                    "_searchable": searchable
+                })
+
+        except (requests.RequestException, ValueError):
+            continue
 
     # --------------------------------------------------
     # SOURCE 2: HIMALAYAS
     # --------------------------------------------------
 
-    try:
+    himalayas_queries = source_queries or [
+        "remote jobs"
+    ]
 
-        query_parts = []
-
-        query_parts.extend(search_terms)
-        query_parts.extend(role_terms)
-
-        himalayas_query = " ".join(
-            dict.fromkeys(query_parts)
-        ).strip()
-
-        if not himalayas_query:
-            himalayas_query = "remote jobs"
-
-        himalayas_jobs = fetch_himalayas(
-            himalayas_query,
-            limit=limit
-        )
-
-        for job in himalayas_jobs:
-
-            title = (
-                job.get("title")
-                or job.get("name")
-                or ""
-            ).strip()
-
-            company_data = job.get(
-                "company",
-                ""
+    for source_query in himalayas_queries:
+        try:
+            himalayas_jobs = fetch_himalayas(
+                source_query,
+                limit=limit
             )
 
-            if isinstance(company_data, dict):
-
-                company = (
-                    company_data.get("name")
+            for job in himalayas_jobs:
+                title = str(
+                    job.get("title")
+                    or job.get("name")
                     or ""
                 ).strip()
 
-            else:
+                company_data = job.get(
+                    "company",
+                    ""
+                )
 
-                company = str(
-                    company_data or ""
+                if isinstance(company_data, dict):
+                    company = str(
+                        company_data.get("name")
+                        or ""
+                    ).strip()
+                else:
+                    company = str(
+                        company_data or ""
+                    ).strip()
+
+                description = str(
+                    job.get("description")
+                    or job.get("excerpt")
+                    or ""
                 ).strip()
 
-            description = (
-                job.get("description")
-                or job.get("excerpt")
-                or ""
-            ).strip()
-
-            location = (
-                job.get("location")
-                or job.get("country")
-                or ""
-            )
-
-            url = (
-                job.get("applicationLink")
-                or job.get("url")
-                or job.get("guid")
-                or ""
-            ).strip()
-
-            published = (
-                job.get("publishedAt")
-                or job.get("pubDate")
-                or job.get("createdAt")
-            )
-
-            searchable = " ".join([
-                title,
-                company,
-                description,
-                str(location)
-            ]).lower()
-
-            all_jobs.append({
-                "title": title,
-                "company": company,
-                "location": location,
-                "job_type": (
-                    job.get("employmentType")
-                    or job.get("jobType")
-                    or []
-                ),
-                "level": (
-                    job.get("seniority")
-                    or job.get("jobLevel")
+                location = (
+                    job.get("location")
+                    or job.get("country")
                     or ""
-                ),
-                "description": description,
-                "url": url,
-                "published": published,
-                "source": "Himalayas",
-                "_searchable": searchable
-            })
+                )
 
-    except requests.RequestException:
-        pass
+                url = str(
+                    job.get("applicationLink")
+                    or job.get("url")
+                    or job.get("guid")
+                    or ""
+                ).strip()
+
+                published = (
+                    job.get("publishedAt")
+                    or job.get("pubDate")
+                    or job.get("createdAt")
+                )
+
+                clean_description = clean_html(
+                    description
+                )
+
+                searchable = " ".join([
+                    title,
+                    company,
+                    clean_description,
+                    str(location)
+                ]).lower()
+
+                all_jobs.append({
+                    "title": title,
+                    "company": company,
+                    "location": location,
+                    "job_type": (
+                        job.get("employmentType")
+                        or job.get("jobType")
+                        or []
+                    ),
+                    "level": (
+                        job.get("seniority")
+                        or job.get("jobLevel")
+                        or ""
+                    ),
+                    "description": clean_description,
+                    "url": url,
+                    "published": published,
+                    "source": "Himalayas",
+                    "_searchable": searchable
+                })
+
+        except (requests.RequestException, ValueError):
+            continue
 
     # --------------------------------------------------
     # FILTER + RANK
@@ -360,7 +516,6 @@ def collect_jobs(
     cutoff = None
 
     if days:
-
         cutoff = (
             datetime.now(timezone.utc)
             - timedelta(days=days)
@@ -370,7 +525,6 @@ def collect_jobs(
     seen = set()
 
     for job in all_jobs:
-
         title = job["title"]
         url = job["url"]
 
@@ -385,6 +539,10 @@ def collect_jobs(
         searchable_text = job["_searchable"]
         title_lower = title.lower()
 
+        # ----------------------------------------------
+        # KEYWORD MATCHING
+        # ----------------------------------------------
+
         matched_keywords = [
             keyword
             for keyword in search_terms
@@ -393,6 +551,10 @@ def collect_jobs(
 
         if search_terms and not matched_keywords:
             continue
+
+        # ----------------------------------------------
+        # ROLE MATCHING
+        # ----------------------------------------------
 
         matched_roles = [
             item
@@ -403,30 +565,33 @@ def collect_jobs(
         if expanded_roles and not matched_roles:
             continue
 
+        # ----------------------------------------------
+        # DATE
+        # ----------------------------------------------
+
         published_date = parse_date(
             job["published"]
         )
 
         if cutoff and published_date:
-
             if published_date < cutoff:
                 continue
+
+        # ----------------------------------------------
+        # SCORE
+        # ----------------------------------------------
 
         score = 0
 
         for keyword in matched_keywords:
-
             if keyword in title_lower:
                 score += 6
-
             elif keyword in job["company"].lower():
                 score += 3
-
             else:
                 score += 1
 
         for role_item in matched_roles:
-
             if role_item in title_lower:
                 score += 6
             else:
@@ -447,7 +612,6 @@ def collect_jobs(
             score += 5
 
         if published_date:
-
             age_hours = (
                 datetime.now(timezone.utc)
                 - published_date
@@ -455,14 +619,16 @@ def collect_jobs(
 
             if age_hours <= 24:
                 score += 3
-
             elif age_hours <= 72:
                 score += 2
+
+        # ----------------------------------------------
+        # MATCH REASONS
+        # ----------------------------------------------
 
         match_reasons = []
 
         for keyword in matched_keywords:
-
             label = keyword.capitalize()
 
             if keyword in title_lower:
@@ -475,41 +641,57 @@ def collect_jobs(
                 )
 
         if matched_roles:
+            primary_role = (
+                role_terms[0]
+                if role_terms
+                else None
+            )
 
-            primary_role = role_terms[0] if role_terms else None
-
-            if primary_role:
-
-                if primary_role == "developer":
-                    match_reasons.append(
-                        "Developer / Engineer role"
-                    )
-
-                elif primary_role == "engineer":
-                    match_reasons.append(
-                        "Engineer / Developer role"
-                    )
-
-                else:
-                    match_reasons.append(
-                        f"{primary_role.capitalize()} role"
-                    )
-
-        if days:
-
-            if published_date:
-
+            if primary_role == "developer":
                 match_reasons.append(
-                    f"Posted within {days} days"
+                    "Developer / Engineer role"
                 )
 
+            elif primary_role == "engineer":
+                match_reasons.append(
+                    "Engineer / Developer role"
+                )
+
+            elif primary_role == "intern":
+                match_reasons.append(
+                    "Intern role"
+                )
+
+            elif primary_role == "devops":
+                match_reasons.append(
+                    "DevOps / Cloud role"
+                )
+
+            elif primary_role:
+                match_reasons.append(
+                    f"{primary_role.capitalize()} role"
+                )
+
+        if days and published_date:
+            match_reasons.append(
+                f"Posted within {days} days"
+            )
+
+        # ----------------------------------------------
+        # FINALIZE
+        # ----------------------------------------------
+
         job.pop("_searchable", None)
+
+        if published_date:
+            job["published"] = (
+                published_date.isoformat()
+            )
 
         job["relevance_score"] = score
         job["match_reasons"] = match_reasons
 
         seen.add(normalized_url)
-
         results.append(job)
 
     results.sort(

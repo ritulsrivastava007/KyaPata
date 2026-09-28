@@ -10,12 +10,32 @@ ROLE_KEYWORDS = {
     "manager",
     "intern",
     "internship",
+    "internships",
+    "trainee",
     "architect",
     "consultant",
     "administrator",
     "devops",
     "tester",
+    "testing",
     "qa"
+}
+
+
+ROLE_NORMALIZATION = {
+    "internships": "intern",
+    "internship": "intern",
+    "trainee": "intern",
+    "developers": "developer",
+    "engineers": "engineer",
+    "designers": "designer",
+    "analysts": "analyst",
+    "scientists": "scientist",
+    "managers": "manager",
+    "architects": "architect",
+    "consultants": "consultant",
+    "administrators": "administrator",
+    "testers": "tester"
 }
 
 
@@ -48,9 +68,7 @@ STOP_WORDS = {
 
 
 def create_plan(query: str) -> dict:
-
     text = query.lower().strip()
-
 
     plan = {
         "intent": "data_search",
@@ -61,37 +79,25 @@ def create_plan(query: str) -> dict:
         "source_type": "jobs"
     }
 
-
-    # --------------------------------
-    # INTENT
-    # --------------------------------
-
     if any(word in text for word in [
         "job",
         "jobs",
         "developer",
+        "developers",
         "role",
         "vacancy",
         "vacancies",
         "employment",
         "engineer",
+        "engineers",
+        "intern",
         "internship",
-        "intern"
+        "internships"
     ]):
         plan["intent"] = "job_search"
 
-
-    # --------------------------------
-    # REMOTE
-    # --------------------------------
-
     if "remote" in text:
         plan["remote"] = True
-
-
-    # --------------------------------
-    # DATE RANGE
-    # --------------------------------
 
     day_match = re.search(
         r"(?:last|past|previous|within)\s+(\d+)\s+days?",
@@ -101,62 +107,48 @@ def create_plan(query: str) -> dict:
     if day_match:
         plan["days"] = int(day_match.group(1))
 
-
-    # --------------------------------
-    # WORD EXTRACTION
-    # --------------------------------
-
     words = re.findall(
         r"[a-zA-Z0-9+#.]+",
         text
     )
 
-
-    # --------------------------------
-    # ROLE EXTRACTION
-    # --------------------------------
+    normalized_words = []
 
     for word in words:
+        normalized_words.append(
+            ROLE_NORMALIZATION.get(word, word)
+        )
 
+    for word in normalized_words:
         if word in ROLE_KEYWORDS:
             plan["role"].append(word)
-
-
-    # Remove duplicate roles while preserving order.
 
     plan["role"] = list(
         dict.fromkeys(plan["role"])
     )
 
-
-    # --------------------------------
-    # GENERAL KEYWORDS
-    # --------------------------------
-
     keywords = []
 
-    for word in words:
-
-        if word in STOP_WORDS:
+    for original_word, normalized_word in zip(
+        words,
+        normalized_words
+    ):
+        if original_word in STOP_WORDS:
             continue
 
-        if word in ROLE_KEYWORDS:
+        if normalized_word in ROLE_KEYWORDS:
             continue
 
-        if word.isdigit():
+        if original_word.isdigit():
             continue
 
-        if len(word) <= 1:
+        if len(original_word) <= 1:
             continue
 
-        keywords.append(word)
-
-
-    # Remove duplicates.
+        keywords.append(original_word)
 
     plan["keywords"] = list(
         dict.fromkeys(keywords)
     )
-
 
     return plan

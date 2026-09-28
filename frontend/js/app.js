@@ -9,7 +9,12 @@ function escapeHtml(value) {
         return "";
     }
 
-    return String(value)
+    const text = String(value);
+
+    const textarea = document.createElement("textarea");
+    textarea.innerHTML = text;
+
+    return textarea.value
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
@@ -96,6 +101,24 @@ function renderResults(results, query, plan) {
     if (plan?.days) {
         planTags.push(`Last ${plan.days} days`);
     }
+
+    const sourceCounts = {};
+
+    results.forEach((job) => {
+        const source = job.source || "Unknown source";
+
+        sourceCounts[source] =
+            (sourceCounts[source] || 0) + 1;
+    });
+
+    const sourceSummary = Object.entries(sourceCounts)
+        .map(([source, count]) => `
+            <span class="source-summary-item">
+                <strong>${count}</strong>
+                ${escapeHtml(source)}
+            </span>
+        `)
+        .join("");
 
     const cards = results.map((job) => {
 
@@ -276,9 +299,17 @@ function renderResults(results, query, plan) {
                 </div>
             </div>
 
-            <div class="live-indicator">
-                <span class="live-dot"></span>
-                Live data ✓
+            <div class="results-live-info">
+
+                <div class="live-indicator">
+                    <span class="live-dot"></span>
+                    Live data ✓
+                </div>
+
+                <div class="source-summary">
+                    ${sourceSummary}
+                </div>
+
             </div>
 
         </div>
@@ -361,6 +392,11 @@ async function runQuery(query) {
             data.plan
         );
 
+        saveSearchHistory(
+            query,
+            data.results ? data.results.length : 0
+        );
+
     } catch (error) {
         console.error(error);
 
@@ -421,7 +457,187 @@ function setupSearch() {
     });
 }
 
+function saveSearchHistory(query, resultCount) {
+    const history = JSON.parse(
+        localStorage.getItem("kyapata_history") || "[]"
+    );
+
+    const entry = {
+        query: query,
+        resultCount: resultCount,
+        timestamp: new Date().toISOString()
+    };
+
+    const filteredHistory = history.filter(
+        (item) =>
+            item.query.toLowerCase() !== query.toLowerCase()
+    );
+
+    filteredHistory.unshift(entry);
+
+    localStorage.setItem(
+        "kyapata_history",
+        JSON.stringify(filteredHistory.slice(0, 10))
+    );
+}
+
+function getSearchHistory() {
+    return JSON.parse(
+        localStorage.getItem("kyapata_history") || "[]"
+    );
+}
+
+function renderHistory() {
+    const container = getResultsContainer();
+
+    if (!container) {
+        return;
+    }
+
+    const history = getSearchHistory();
+
+    if (history.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-title">
+                    No search history yet
+                </div>
+
+                <div class="empty-text">
+                    Your previous KyaPata searches will appear here.
+                </div>
+            </div>
+        `;
+
+        return;
+    }
+
+    const items = history.map((item) => {
+        const date = new Date(item.timestamp);
+
+        const formattedDate = date.toLocaleString("en-US", {
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+            hour: "numeric",
+            minute: "2-digit"
+        });
+
+        return `
+            <button
+                class="history-item"
+                data-query="${escapeHtml(item.query)}"
+            >
+                <div class="history-item-main">
+                    <div class="history-query">
+                        ${escapeHtml(item.query)}
+                    </div>
+
+                    <div class="history-meta">
+                        ${formattedDate}
+                        ·
+                        ${item.resultCount} results
+                    </div>
+                </div>
+
+                <span class="history-arrow">→</span>
+            </button>
+        `;
+    }).join("");
+
+    container.innerHTML = `
+        <div class="results-header">
+            <div>
+                <div class="results-count">
+                    Search history
+                </div>
+
+                <div class="results-query">
+                    Your recent KyaPata discoveries
+                </div>
+            </div>
+        </div>
+
+        <div class="history-list">
+            ${items}
+        </div>
+    `;
+
+    container
+        .querySelectorAll(".history-item")
+        .forEach((item) => {
+            item.addEventListener("click", () => {
+                const query = item.dataset.query;
+
+                document.getElementById("queryInput").value = query;
+
+                setActiveNav("discover");
+
+                runQuery(query);
+            });
+        });
+}
+
+function setActiveNav(active) {
+    const discoverLink =
+        document.getElementById("discoverLink");
+
+    const historyLink =
+        document.getElementById("historyLink");
+
+    if (!discoverLink || !historyLink) {
+        return;
+    }
+
+    discoverLink.classList.toggle(
+        "active",
+        active === "discover"
+    );
+
+    historyLink.classList.toggle(
+        "active",
+        active === "history"
+    );
+}
+
+function setupHistory() {
+    const historyLink =
+        document.getElementById("historyLink");
+
+    const discoverLink =
+        document.getElementById("discoverLink");
+
+    if (!historyLink || !discoverLink) {
+        return;
+    }
+
+    historyLink.addEventListener("click", (event) => {
+        event.preventDefault();
+
+        setActiveNav("history");
+        renderHistory();
+    });
+
+    discoverLink.addEventListener("click", (event) => {
+        event.preventDefault();
+
+        setActiveNav("discover");
+
+        const input =
+            document.getElementById("queryInput");
+
+        if (input) {
+            input.focus();
+        }
+    });
+}
+
 document.addEventListener(
     "DOMContentLoaded",
     setupSearch
+);
+
+document.addEventListener(
+    "DOMContentLoaded",
+    setupHistory
 );
