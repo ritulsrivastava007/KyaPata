@@ -1,5 +1,4 @@
 # KyaPata
-# KyaPata
 
 ### Ask. Find. Know.
 
@@ -111,7 +110,7 @@ KyaPata applies:
 
 * Keyword matching
 * Role matching
-* Remote filtering
+* Remote job discovery
 * Date filtering
 * Duplicate removal
 
@@ -392,7 +391,7 @@ These constraints are intentional so the current prototype remains focused and d
 * [x] Multiple job sources
 * [x] Keyword and role matching
 * [x] Date filtering
-* [x] Remote filtering
+* [x] Remote job discovery
 * [x] Deduplication
 * [x] Relevance ranking
 * [x] Match explanations
