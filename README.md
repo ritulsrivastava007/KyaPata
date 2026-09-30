@@ -428,6 +428,14 @@ The long-term goal is to build a general-purpose discovery layer that can transf
 
 ---
 
+## 🎥 Demo
+
+▶️ [Watch the KyaPata Demo](https://youtu.be/CsSfP30yO5Q)
+
+See KyaPata turn natural-language queries into live, traceable job-discovery results.
+
+---
+
 ## 🤝 Contributing
 
 Contributions, suggestions, and ideas are welcome.
